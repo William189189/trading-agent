@@ -1,0 +1,9 @@
+{
+  "name": "trading-agent",
+  "version": "1.0.0",
+  "main": "agent.js",
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.52.0",
+    "dotenv": "^16.0.0"
+  }
+}
