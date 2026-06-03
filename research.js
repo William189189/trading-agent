@@ -1,26 +1,28 @@
-const { getAccount, getLatestQuote, getBars, getPositions } = require('./alpaca');
+const { getAccount, getLatestQuote, getPositions } = require('./alpaca');
 
 const WATCHLIST = ['NVDA', 'MSFT', 'GOOGL', 'META', 'AMD'];
 
-function calcRSI(closes, period = 14) {
-  if (closes.length < period + 1) return null;
-  let gains = 0, losses = 0;
-  for (let i = closes.length - period; i < closes.length; i++) {
-    const diff = closes[i] - closes[i - 1];
-    if (diff >= 0) gains += diff;
-    else losses += Math.abs(diff);
-  }
-  const avgGain = gains / period;
-  const avgLoss = losses / period;
-  if (avgLoss === 0) return 100;
-  const rs = avgGain / avgLoss;
-  return parseFloat((100 - 100 / (1 + rs)).toFixed(2));
-}
+async function getSnapshot(symbol) {
+  const ALPACA_DATA_URL = 'https://data.alpaca.markets';
+  const ALPACA_KEY = process.env.ALPACA_API_KEY;
+  const ALPACA_SECRET = process.env.ALPACA_API_SECRET;
 
-function calcSMA(closes, period = 20) {
-  if (closes.length < period) return null;
-  const slice = closes.slice(-period);
-  return parseFloat((slice.reduce((a, b) => a + b, 0) / period).toFixed(4));
+  const url = `${ALPACA_DATA_URL}/v2/stocks/${symbol}/snapshot`;
+  console.log(`Fetching snapshot for ${symbol}`);
+  const res = await fetch(url, {
+    headers: {
+      'APCA-API-KEY-ID': ALPACA_KEY,
+      'APCA-API-SECRET-KEY': ALPACA_SECRET,
+    },
+  });
+  const text = await res.text();
+  console.log(`Snapshot for ${symbol} (${res.status}):`, text.substring(0, 400));
+  try {
+    return JSON.parse(text);
+  } catch {
+    console.error(`Snapshot parse error for ${symbol}:`, text);
+    return null;
+  }
 }
 
 async function buildMarketData() {
@@ -40,28 +42,30 @@ async function buildMarketData() {
   for (const symbol of WATCHLIST) {
     let price = null;
     let change_pct_1d = null;
-    let rsi_14 = null;
-    let above_20ma = null;
+    let prev_close = null;
 
-    const bars = await getBars(symbol, 30);
-    console.log(`${symbol}: got ${bars.length} bars`);
+    const snap = await getSnapshot(symbol);
 
-    if (bars.length >= 2) {
-      const closes = bars.map(b => b.c);
-      price = closes[closes.length - 1];
-      const prev = closes[closes.length - 2];
-      change_pct_1d = parseFloat((((price - prev) / prev) * 100).toFixed(4));
-      rsi_14 = calcRSI(closes);
-      const sma20 = calcSMA(closes, 20);
-      above_20ma = sma20 !== null ? price > sma20 : null;
-      console.log(`${symbol}: price=${price}, change=${change_pct_1d}%, RSI=${rsi_14}, above20ma=${above_20ma}`);
+    if (snap && snap.dailyBar && snap.prevDailyBar) {
+      const today = snap.dailyBar;
+      const prev = snap.prevDailyBar;
+      price = today.c || today.h || null;
+      prev_close = prev.c || null;
+      if (price && prev_close) {
+        change_pct_1d = parseFloat((((price - prev_close) / prev_close) * 100).toFixed(4));
+      }
+      console.log(`${symbol}: price=${price}, prev_close=${prev_close}, change=${change_pct_1d}%`);
+    } else if (snap && snap.latestTrade) {
+      price = snap.latestTrade.p || null;
+      console.log(`${symbol}: fallback to latestTrade price=${price}`);
     } else {
+      // Last resort: quote
       try {
-        const quoteData = await getLatestQuote(symbol);
-        price = quoteData.quote?.ap ?? quoteData.quote?.bp ?? null;
-        console.log(`${symbol}: no bars, quote price=${price}`);
+        const q = await getLatestQuote(symbol);
+        price = q.quote?.ap || q.quote?.bp || null;
+        console.log(`${symbol}: fallback to quote price=${price}`);
       } catch (e) {
-        console.error(`${symbol} quote fallback failed:`, e.message);
+        console.error(`${symbol} all fallbacks failed:`, e.message);
       }
     }
 
@@ -69,8 +73,9 @@ async function buildMarketData() {
       symbol,
       price,
       change_pct_1d,
-      rsi_14,
-      above_20ma,
+      prev_close,
+      rsi_14: null,
+      above_20ma: null,
       recent_headlines: [],
       current_position: positionMap[symbol] || null,
     });
