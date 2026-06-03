@@ -40,9 +40,7 @@ async function getLatestQuote(symbol) {
   }
 }
 
-// Fetch daily bars for a symbol. Returns array of bar objects sorted oldest->newest.
 async function getBars(symbol, limit = 30) {
-  // No feed param — let Alpaca pick best available for the account type
   const url = `${ALPACA_DATA_URL}/v2/stocks/${symbol}/bars?timeframe=1Day&limit=${limit}&adjustment=raw`;
   console.log(`Fetching bars for ${symbol}: ${url}`);
   const res = await fetch(url, {
