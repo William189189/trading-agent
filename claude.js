@@ -18,8 +18,10 @@ async function getTradeDecision(marketData) {
   });
 
   const responseText = message.content[0].text;
-  const clean = responseText.replace(/```json|```/g, '').trim();
-  return JSON.parse(clean);
+  const start = responseText.indexOf('{');
+  const end = responseText.lastIndexOf('}');
+  if (start === -1 || end === -1) throw new Error(`No JSON object found in response: ${responseText}`);
+  return JSON.parse(responseText.slice(start, end + 1));
 }
 
 module.exports = { getTradeDecision };
