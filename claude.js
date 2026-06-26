@@ -18,8 +18,20 @@ async function getTradeDecision(marketData) {
   });
 
   const responseText = message.content[0].text;
-  const clean = responseText.replace(/```json|```/g, '').trim();
-  return JSON.parse(clean);
+  const start = responseText.indexOf('{');
+  if (start === -1) throw new Error(`No JSON object found in response: ${responseText}`);
+  let depth = 0, inString = false, escape = false;
+  for (let i = start; i < responseText.length; i++) {
+    const c = responseText[i];
+    if (escape) { escape = false; continue; }
+    if (c === '\\' && inString) { escape = true; continue; }
+    if (c === '"') { inString = !inString; continue; }
+    if (!inString) {
+      if (c === '{') depth++;
+      else if (c === '}' && --depth === 0) return JSON.parse(responseText.slice(start, i + 1));
+    }
+  }
+  throw new Error(`No balanced JSON object found in response: ${responseText}`);
 }
 
 module.exports = { getTradeDecision };
